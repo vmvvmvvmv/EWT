@@ -1,98 +1,126 @@
-# KT Plaza 상담 예상시간·대기시간 안내 AI Agent
+# vinext-starter
 
-> **부산경남 08반 22조** | 팀원: 이동훈(조장), 임태형, 하광석  
-> **핵심 기술:** n8n Workflow Automation, JavaScript (Code Node), n8n Data Tables
+A clean full-stack starter running on [vinext](https://github.com/cloudflare/vinext), with optional Cloudflare D1 and Drizzle support.
 
----
+## Prerequisites
 
-## 📌 1. 프로젝트 개요 (Overview)
+- Node.js `>=22.13.0`
+- Portable: Windows, macOS, or Linux; no Bash required
+- Managed Linux: managed Linux runtime with Bash, `flock`, `curl`, `sha256sum`, and GNU `timeout`
+- Git is required only for publishing
 
-본 프로젝트는 KT Plaza 방문 예정 고객의 불확실성을 해소하고 매장의 효율적인 고객 관리를 돕기 위해 개발된 **실시간 대기/상담 시간 예측 AI Agent**입니다.
+## Sites Lifecycle
 
-고객이 방문 목적과 세부 요청을 입력하면, AI Agent가 상담 유형을 분류하고 선택 매장의 **실시간 상담·대기·예약 현황과 직원 숙련도** 등을 종합적으로 반영하여 **예상 상담시간, 예상 대기시간, 총 소요시간 및 매장 혼잡도**를 정확하게 산출해 제공합니다.
+The Sites initializer copies the shared starter and selects managed-linux only when `SITES_MANAGED_LINUX_CONTAINER=1`; otherwise it selects portable. It saves the selection only in ignored `.sites-runtime/execution-profile.json`. Both profiles copy/configure first, then use the plugin's separate `install-dependencies.mjs` step to measure installation independently. Edit source under `app/` and follow the Sites skill for installation, preview, builds, and publishing.
 
-### 🎯 주요 타겟 및 기대 효과
-* **고객:** 매장 방문 전 대기 및 상담 소요 시간을 예측하여 방문 일정을 효율적으로 계획
-* **매장 운영자/직원:** 사전 방문 목적 파악을 통한 효율적인 상담 준비 및 매장 혼잡도 분산 효과 적용
+Run `node <plugin-root>/scripts/configure-execution-profile.mjs` only when the profile is unknown for the current checkout and environment. Profile changes do not alter tracked source or require reinstalling otherwise-valid dependencies; restart an existing preview to use the new selection. Do not commit or upload `.sites-runtime/`.
 
----
+This starter does not use `wrangler.jsonc`.
 
-## 🛠️ 2. 기술 스택 및 아키텍처 (Tech Stack)
+`install:ci` runs `npm ci` once against the shared lockfile, disables parent-workspace discovery, and includes required dev/optional dependencies despite production/omit settings. Sharp defaults to prebuilt binaries unless explicitly configured otherwise. Do not overlap installers.
 
-| 구분 | 사용 기술 / Tool | 상세 역할 |
-| :--- | :--- | :--- |
-| **Workflow Engine** | `n8n` | 메인 AI Agent 워크플로우 제어 및 서브 워크플로우 호출 |
-| **Logic & Scripting** | `JavaScript` (`n8n Code Node`) | 자연어 분류, 세부시간 합산, 대기열 시뮬레이션 및 혼잡 보정 알고리즘 |
-| **Data Management** | `n8n Data Tables` | 상담유형, 매장정보, 직원/근무현황, 실시간 대기열/예약 데이터 관리 |
-| **Interface** | `n8n Form Trigger` | 고객 입력 수집 (Production URL 기반 시연) |
+- **Portable:** Preserve host HOME, npm cache, registry, proxy, temporary paths, retry/concurrency settings, and lifecycle-script policy. Use `--prefer-offline --no-audit --no-fund`.
+- **Managed Linux:** Use the existing project-local HOME/cache/tmp setup and Linux install lock, tarball preflight, and timeout. Restore the image-seeded npm cache only when its lockfile hash matches; retain network fallback. Builds keep their existing timeout. These helpers are not invoked by the portable profile.
 
----
+`scripts/sites-env.mjs` preserves the caller's HOME, npm cache, proxy, XDG, and temporary-directory configuration while defaulting Wrangler and Miniflare state to the checkout. If npm reports an unwritable cache, select a writable path with `npm_config_cache` for that install. The `dev` and `start` scripts also keep Wrangler logs inside the checkout. Generated `.sites-runtime/` and `.wrangler/` directories are disposable and ignored by Git.
 
-## 🔄 3. 워크플로우 구조 (Workflow Architecture)
+On portable, `npm run dev` uses `vinext dev` with HMR, starting at port 5173. Vinext records the running server in ignored `.vinext/` state, rejects an ordinary duplicate launch, and recovers stale state after a stopped process; exactly simultaneous starts can race. Pass `--port <port>` or `--hostname <host>` after `npm run dev --` when needed; keep portable previews on loopback.
 
-본 시스템은 n8n의 `Execute Workflow (Sub-workflow)` 방식을 사용하여 기능별로 독립된 5개의 모듈로 구성되어 있습니다. 각 단계는 `request_id`와 `store_id`를 전달받아 연쇄적으로 처리됩니다.
+For browser QA on managed Linux, use `sites-preview start`. The project's dev script runs Vite and accepts the supervisor's `--host 0.0.0.0 --port 4173 --strictPort` arguments. The internal browser uses `http://terminal.local:4173/`; it is not a user-facing URL. The supervisor owns the preview lifecycle. The ignored local profile survives the supervisor's cleared process environment.
 
+The portable profile simulates ChatGPT sign-in only for loopback development requests. Visit `/signin-with-chatgpt?return_to=/` to sign in as `local_seedy` (`seedy@sites.test`, display name `Seedy`) and `/signout-with-chatgpt?return_to=/` to sign out. The development cookie preserves that identity across server restarts. Mock auth is disabled in the managed-linux profile and is not included in production builds; hosted authentication remains dispatch-owned.
+
+The Worker uses `vinext/server/fetch-handler`, including Vinext's config-aware image handling. After building, `npm start` runs that Worker locally through Wrangler on `127.0.0.1`, sharing `.wrangler/state` with dev preview and local D1 migrations; it does not deploy the site or simulate sign-in. Use the URL printed by the server. Pass `npm start -- --port <port>` to select a different built-preview port.
+
+Local previews use Miniflare's placeholder `Request.cf` metadata without a network lookup. Set `CLOUDFLARE_CF_FETCH_ENABLED=true` to opt into fetching preview metadata; this setting does not change hosted request metadata.
+
+Local tool usage metrics are disabled by default. Set `WRANGLER_SEND_METRICS=true` to opt in.
+
+## Included Shape
+
+- edit site code under `app/`
+- `app/chatgpt-auth.ts` provides optional dispatch-owned ChatGPT sign-in helpers
+- `.openai/hosting.json` declares optional Sites D1 and R2 bindings
+- `vite.config.ts` simulates declared bindings for local development
+- `db/index.ts` reads the D1 binding from the Cloudflare Worker environment
+- `db/schema.ts` starts intentionally empty
+- `@cloudflare/workers-types` provides Worker types; `cloudflare-env.d.ts` declares optional `DB`/`BUCKET` bindings—update these declarations if binding names change
+- `examples/d1/` contains an optional D1 example surface
+- `drizzle.config.ts` supports local migration generation when needed
+
+## Workspace Auth Headers
+
+Signed-in visitors receive both `oai-authenticated-user-id` and `oai-authenticated-user-email`. Private Sites require every visitor to sign in; public Sites may also have anonymous visitors, for whom neither header is present.
+
+The user ID is stable for the same user on the same Site and different across Sites. Use it as the durable user key; use email and name for display or contact purposes.
+
+SIWC-authenticated workspace sites may also receive `oai-authenticated-user-full-name` when the user's SIWC profile has a non-empty `name` claim. The full-name value is percent-encoded UTF-8 and is accompanied by `oai-authenticated-user-full-name-encoding: percent-encoded-utf-8`.
+
+Treat the full name as optional and fall back to email when it is absent:
+
+```tsx
+import { headers } from "next/headers";
+
+export default async function Home() {
+  const requestHeaders = await headers();
+  const userId = requestHeaders.get("oai-authenticated-user-id");
+  const email = requestHeaders.get("oai-authenticated-user-email");
+  const encodedFullName = requestHeaders.get("oai-authenticated-user-full-name");
+  const fullName =
+    encodedFullName &&
+    requestHeaders.get("oai-authenticated-user-full-name-encoding") ===
+      "percent-encoded-utf-8"
+      ? decodeURIComponent(encodedFullName)
+      : null;
+
+  const displayName = fullName ?? email;
+  // ...
+}
 ```
-[고객 Web Form] 
-       │
-       ▼
-┌─────────────┐     ┌─────────────┐     ┌─────────────┐     ┌─────────────┐     ┌─────────────┐
-│    F-01     │ ──> │    F-02     │ ──> │    F-03     │ ──> │    F-04     │ ──> │    F-05     │
-│상담유형 분석│     │상담시간 산출│     │대기시간 예측│     │총 소요시간  │     │고객 안내 생성│
-└─────────────┘     └─────────────┘     └─────────────┘     └─────────────┘     └─────────────┘
+
+## Optional Dispatch-Owned ChatGPT Sign-In
+
+Import the ready-to-use helpers from `app/chatgpt-auth.ts` when the site needs optional or required ChatGPT sign-in:
+
+- Use `getChatGPTUser()` for optional signed-in UI.
+- Use the returned `userId` as the stable user key for user-owned records; do not use email as a durable identifier.
+- Use `requireChatGPTUser(returnTo)` for server-rendered pages that should send anonymous visitors through Sign in with ChatGPT.
+- In a Server Component, start sign-in with `<a href={chatGPTSignInPath(returnTo)} target="_top">`. The auth helper module is server-only; do not import it into a Client Component.
+- Do not use `fetch`, XHR, a client-side router, or a framework link that can prefetch the sign-in route. SIWC must start as a top-level navigation.
+- Never request the AuthAPI authorization endpoint directly. The dispatch-owned `/signin-with-chatgpt` route must start the SIWC flow.
+- Use `chatGPTSignOutPath(returnTo)` for browser sign-out links or actions.
+- Pass a same-origin relative `returnTo` path for the destination after sign-in or sign-out. The helper validates and safely encodes it.
+- Mark protected pages with `export const dynamic = "force-dynamic"` because they depend on per-request identity headers.
+
+Dispatch owns `/signin-with-chatgpt`, `/signout-with-chatgpt`, `/callback`, the OAuth cookies, and identity header injection. Do not implement app routes for those reserved paths. Routes that do not import and call the helper remain anonymous-compatible.
+
+SIWC establishes identity only; it does not prove workspace membership. Use the Sites hosting platform's access policy controls for workspace-wide restrictions, or enforce explicit server-side membership or allowlist checks.
+
+Use SIWC for account pages, user-specific dashboards, saved records, and write actions tied to the current ChatGPT user. Leave public content anonymous.
+
+## Local D1 migrations
+
+For a D1-backed local preview, generate SQL with `npm run db:generate`. Build once through the Sites skill's build entrypoint (or `npm run build` for standalone use) to generate `dist/server/wrangler.json`, rebuilding if bindings change. From the project root, apply each pending migration in order:
+
+```sh
+node --import ./scripts/sites-env.mjs ./node_modules/wrangler/bin/wrangler.js d1 execute DB --local --config dist/server/wrangler.json --persist-to .wrangler/state --file drizzle/0000_example.sql
 ```
 
----
+Replace the filename with the pending migration and `DB` with your D1 binding name if different. Use `.wrangler/state`, not `.wrangler/state/v3`; Wrangler adds the versioned directories. Do not replay migrations already applied locally. This updates only the preview database; publishing applies production migrations separately.
 
-## 🚀 4. 주요 기능 상세 (Key Features)
+## Diagnostic Commands
 
-### `F-01` 방문 목적 분석 및 상담유형 분류
-* **입력:** 고객 방문 목적 텍스트(`customer_text`), 상세 요청(`detail_text`), 방문 매장(`store_id`)
-* **처리:** `request_id` 자동 생성 후 키워드 기반으로 상담유형(기기변경, 요금제 변경 등)을 분류하고 기준 상담시간을 조회합니다.
+- `npm run install:ci`: perform the one locked dependency install
+- `npm run dev`: start the Vite/Vinext development server
+- `npm run build`: build the deployable Sites artifact
+- `npm run start`: preview the built Worker locally with D1/R2 support
+- `npm run db:generate`: generate Drizzle migrations after schema changes
 
-### `F-02` 예상 상담시간 산출
-* **처리:** 상세 요청 내 세부업무(데이터 이전, USIM 교체 등) 추가시간 합산, 복합 상담 절감(추가 업무당 -4분) 및 직원 숙련도(초급 1.15 / 중급 1.00 / 고급 0.90) 보정을 적용하여 **5분 단위**로 계산합니다.
+When using the Sites plugin, follow its skill instructions for installation, builds, and publishing. These npm commands remain available for standalone use.
 
-### `F-03` 실시간 대기시간 예측
-* **처리:** 선택 매장의 현재 상담 중 고객, 대기 고객, 예약 현황을 조회합니다. 직원별 상담 종료시점을 계산하는 **대기열 시뮬레이션** 및 매장 혼잡 보정(최대 1.50)을 수행합니다.
+The portable build runs Vinext directly without a host `timeout` command. The managed-linux build uses `scripts/build-verified.sh` and its existing `SITES_BUILD_TIMEOUT` setting.
 
-### `F-04` 총 예상 소요시간 산출
-* **처리:** `총 예상 소요시간 = 예상 상담시간(F-02) + 보정 대기시간(F-03)` 공식으로 통합 소요 시간을 산출합니다.
+## Learn More
 
-### `F-05` 고객 안내정보 생성
-* **처리:** 매장 정보 조회 결과와 계산 결과를 통합하여 대기시간 기준 혼잡도(원활/보통/혼잡) 판정 후 최종 안내 메시지를 생성합니다.
-
----
-
-## 📊 5. 데이터 명세 및 가중치 기준 (Data & Business Logic)
-
-### 📌 공통 전달 데이터 스키마
-| 필드명 | 타입 | 필수 | 설명 | 예시 |
-| :--- | :--- | :---: | :--- | :--- |
-| `request_id` | STRING | 필수 | 요청 고유 ID | `REQ_1790434715516` |
-| `store_id` | STRING | 필수 | 매장 ID | `ST001` (KT Plaza 서면점) |
-| `consult_type_name`| STRING | 필수 | 상담 유형명 | `기기변경` |
-| `estimated_duration_min`| INT | 필수 | F-02 최종 예상 상담시간 (분) | `45` |
-| `adjusted_wait_min`| INT | 필수 | F-03 보정 대기시간 (분) | `52` |
-| `total_expected_min`| INT | 필수 | F-04 총 예상 소요시간 (분) | `97` |
-| `congestion_status` | STRING | 필수 | 혼잡 상태 표시 | `혼잡` (`≤10분` 원활, `11~30분` 보통, `≥31분` 혼잡) |
-| `customer_message` | STRING | 필수 | 최종 고객 안내 문구 | `"예상 대기 52분, 상담 45분, 총 97분"` |
-
-### ⚖️ 업무 규칙 및 가중치
-1. **기준 상담시간:** 기기변경 32분, 요금 변경 18분, 결합 27분, 명의변경 16분, AS/단말점검 24분, 기타 22분
-2. **세부업무 추가시간:** 데이터이전 15분, 보상기변 12분, 법인명의 12분, 가족결합 10분, 단말추천 8분 등
-3. **복합 상담 절감:** 중복 절차 제거를 위해 추가 업무 1개당 **4분 절감**
-4. **직원 숙련도:** 초급(1.15) / 중급(1.00) / 고급(0.90)
-5. **예약 가중치:** 예약 잔여시간에 따라 ≤30분(1.00), 31~60분(0.70), 61~120분(0.30), >120분(0.10) 차등 반영
-
----
-
-## 📝 6. 실행 및 시연 안내 (How to Run)
-
-1. **n8n 환경 세팅:** n8n 인스턴스에 시연용 Data Tables(상담유형, 매장, 직원, 대기열 등)를 등록합니다.
-2. **서브 워크플로우 연결:** `F-01` ~ `F-05` 서브 워크플로우를 가져온 뒤 `Execute Workflow` 노드의 ID 매핑을 확인합니다.
-3. **Form 실행:** `F-01`에 연결된 **n8n Form Trigger Production URL**을 통해 고객 입력값(`customer_text`, `store_id`)을 전달하여 시연을 진행합니다.
-
----
-
-> ⚠️ **주의사항:** 본 프로젝트에 포함된 더미 데이터 및 규칙 기반 가중치는 시연용 초기값이며, 실제 서비스 배포 시 운영 데이터 기반의 학습/보정이 필요합니다.
+- [vinext Documentation](https://github.com/cloudflare/vinext)
+- [Drizzle D1 Guide](https://orm.drizzle.team/docs/get-started/d1-new)
